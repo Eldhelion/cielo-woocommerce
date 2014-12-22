@@ -39,6 +39,7 @@ class WC_Cielo_Gateway extends WC_Payment_Gateway {
 		$this->environment          = $this->get_option( 'environment' );
 		$this->number               = $this->get_option( 'number' );
 		$this->key                  = $this->get_option( 'key' );
+	 	$this->integration          = $this->get_option( 'integration' );
 		$this->methods              = $this->get_option( 'methods' );
 		$this->debit_methods        = $this->get_option( 'debit_methods', 'visa' );
 		$this->authorization        = $this->get_option( 'authorization' );
@@ -71,6 +72,40 @@ class WC_Cielo_Gateway extends WC_Payment_Gateway {
 		add_action( 'wp_enqueue_scripts', array( $this, 'checkout_scripts' ), 999 );
 		add_action( 'admin_enqueue_scripts', array( $this, 'admin_scripts' ) );
 
+		//Register pages for Cielo 'Solução Integrada'
+		$redirect_page =  get_page_by_title('redirect_page');
+		if (!$redirect_page) {
+			$new = array(
+				'post_type' => 'page',
+				'post_title' => 'redirect_page',
+				'post_content' => '.',
+				'post_status' => 'publish',
+				'post_author'  => 1
+			);
+			wp_insert_post($new, true);
+		}
+		$notification_page =  get_page_by_title('notification_page');
+		if (!$notification_page) {
+			$new = array(
+				'post_type' => 'page',
+				'post_title' => 'notification_page',
+				'post_content' => '.',
+				'post_status' => 'publish',
+				'post_author'  => 1
+			);
+			wp_insert_post($new, true);
+		}
+		$change_status_page =  get_page_by_title('change_status_page');
+		if (!$change_status_page) {
+			$new = array(
+				'post_type' => 'page',
+				'post_title' => 'change_status_page',
+				'post_content' => '.',
+				'post_status' => 'publish',
+				'post_author'  => 1
+			);
+			wp_insert_post($new, true);
+		}
 		// Display admin notices.
 		$this->admin_notices();
 	}
@@ -168,6 +203,17 @@ class WC_Cielo_Gateway extends WC_Payment_Gateway {
 				'description' => __( 'This controls the description which the user sees during checkout.', 'cielo-woocommerce' ),
 				'desc_tip'    => true,
 				'default'     => __( 'Pay using the secure method of Cielo', 'cielo-woocommerce' )
+			),
+			'integration' => array(
+				'title'          => __( 'Integration', 'cielo-woocommerce' ),
+				'type'           => 'select',
+				'description'    => __( 'Select the integration type.', 'cielo-woocommerce' ),
+				'desc_tip'       => true,
+				'default'        => 'buypage',
+				'options'        => array(
+					'buypage'    => __( 'BuyPage', 'cielo-woocommerce' ),
+					'integrated' => __( 'Solução Integrada', 'cielo-woocommerce' )
+				)
 			),
 			'environment' => array(
 				'title'       => __( 'Environment', 'cielo-woocommerce' ),
@@ -389,39 +435,147 @@ class WC_Cielo_Gateway extends WC_Payment_Gateway {
 	 * @return string
 	 */
 	public function payment_fields() {
-		global $woocommerce;
+		if ($this->integration === 'buypage') {
+			global $woocommerce;
 
-		wp_enqueue_script( 'wc-credit-card-form' );
+			wp_enqueue_script( 'wc-credit-card-form' );
 
-		$cart_total = 0;
-		if ( defined( 'WC_VERSION' ) && version_compare( WC_VERSION, '2.1', '>=' ) ) {
-			$order_id = absint( get_query_var( 'order-pay' ) );
+			$cart_total = 0;
+			if ( defined( 'WC_VERSION' ) && version_compare( WC_VERSION, '2.1', '>=' ) ) {
+				$order_id = absint( get_query_var( 'order-pay' ) );
+			} else {
+				$order_id = isset( $_GET['order_id'] ) ? absint( $_GET['order_id'] ) : 0;
+			}
+
+			// Gets order total from "pay for order" page.
+			if ( 0 < $order_id ) {
+				$order      = new WC_Order( $order_id );
+				$cart_total = (float) $order->get_total();
+
+			// Gets order total from cart/checkout.
+			} elseif ( 0 < $woocommerce->cart->total ) {
+				$cart_total = (float) $woocommerce->cart->total;
+			}
+
+			if ( $description = $this->get_description() ) {
+				echo wpautop( wptexturize( $description ) );
+			}
+
+			$model = ( 'icons' == $this->design ) ? 'icons' : 'default';
+
+			// Makes it possible to create custom templates.
+			$path = apply_filters( 'wc_cielo_form_path', plugin_dir_path( __FILE__ ) . 'views/html-payment-form-' . $model . '.php', $model );
+			if ( file_exists( $path ) ) {
+				include_once( $path );
+			}
 		} else {
-			$order_id = isset( $_GET['order_id'] ) ? absint( $_GET['order_id'] ) : 0;
-		}
-
-		// Gets order total from "pay for order" page.
-		if ( 0 < $order_id ) {
-			$order      = new WC_Order( $order_id );
-			$cart_total = (float) $order->get_total();
-
-		// Gets order total from cart/checkout.
-		} elseif ( 0 < $woocommerce->cart->total ) {
-			$cart_total = (float) $woocommerce->cart->total;
-		}
-
-		if ( $description = $this->get_description() ) {
-			echo wpautop( wptexturize( $description ) );
-		}
-
-		$model = ( 'icons' == $this->design ) ? 'icons' : 'default';
-
-		// Makes it possible to create custom templates.
-		$path = apply_filters( 'wc_cielo_form_path', plugin_dir_path( __FILE__ ) . 'views/html-payment-form-' . $model . '.php', $model );
-		if ( file_exists( $path ) ) {
-			include_once( $path );
+			//TODO Arrumar texto
+			echo "Pagar com cartão";
 		}
 	}
+
+	private function process_payment_buypage($order_id){
+		$order        = new WC_Order( $order_id );
+		$card         = isset( $_POST['cielo_card'] ) ? sanitize_text_field( $_POST['cielo_card'] ) : '';
+		$installments = isset( $_POST['cielo_installments'] ) ? absint( $_POST['cielo_installments'] ) : '';
+		$valid        = true;
+		$payment_url  = '';
+
+		// Validate the card brand.
+		if ( ! in_array( $card, $this->methods ) ) {
+		 $this->add_error( __( 'please select a card.', 'cielo-woocommerce' ) );
+		 $valid = false;
+		}
+
+		// Validate the installments field.
+		if ( '' === $installments ) {
+		 $this->add_error( __( 'please select a number of installments.', 'cielo-woocommerce' ) );
+		 $valid = false;
+		}
+
+		// Validate if debit is available.
+		if ( ! in_array( $card, WC_Cielo_API::get_debit_methods( $this->debit_methods ) ) && 0 === $installments ) {
+		 $this->add_error( sprintf( __( '%s does not accept payment by debit.', 'cielo-woocommerce' ), WC_Cielo_API::get_payment_method_name( $card ) ) );
+		 $valid = false;
+		}
+
+		if ( 0 != $installments ) {
+		 // Validate the installments amount.
+		 $installment_total = $order->order_total / $installments;
+		 if ( 'client' == $this->installment_type && $installments >= $this->interest ) {
+		  $interest_total    = $installment_total * ( ( 100 + WC_Cielo_API::get_valid_value( $this->interest_rate ) ) / 100 );
+		  $installment_total = ( $installment_total < $interest_total ) ? $interest_total : $installment_total;
+		 }
+		 $smallest_value = ( 5 <= $this->smallest_installment ) ? $this->smallest_installment : 5;
+		 if ( $installments > $this->installments || 1 != $installments && $installment_total < $smallest_value ) {
+		  $this->add_error( __( 'invalid number of installments!', 'cielo-woocommerce' ) );
+		  $valid = false;
+		 }
+		}
+
+		if ( $valid ) {
+		 $response = $this->api->do_buypage_transaction( $order, $order->id . '-' . time(), $card, $installments );
+
+		 // Set the error alert.
+		 if ( isset( $response->mensagem ) && ! empty( $response->mensagem ) ) {
+		  $this->add_error( (string) $response->mensagem );
+		  $valid = false;
+		 }
+
+		 // Save the tid.
+		 if ( isset( $response->tid ) && ! empty( $response->tid ) ) {
+		  update_post_meta( $order->id, '_wc_cielo_transaction_tid', (string) $response->tid );
+
+		  // For WooCommerce 2.2 or later.
+		  update_post_meta( $order->id, '_transaction_id', (string) $response->tid );
+		 }
+
+		 // Set the transaction URL.
+		 if ( isset( $response->{'url-autenticacao'} ) && ! empty( $response->{'url-autenticacao'} ) ) {
+		  $payment_url = (string) $response->{'url-autenticacao'};
+		 }
+		}
+
+		if ( $valid ) {
+		 return array(
+			 'result'   => 'success',
+			 'redirect' => $payment_url
+		 );
+		} else {
+		 return array(
+			 'result'   => 'fail',
+			 'redirect' => ''
+		 );
+		}
+	}
+
+    private function process_payment_integrated($order_id){
+		$order        = new WC_Order( $order_id );
+		$valid        = true;
+		$payment_url  = '';
+
+		//TODO Validar configurações
+
+		if ( $valid ) {
+			global $data;
+			$data = $this->api->do_integrated_transaction( $order);
+			session_start();
+			$_SESSION['integrated_order'] = $data;
+		}
+
+		if ( $valid ) {
+		 return array(
+			 'result'   => 'success',
+			 'redirect' => '../../redirect_page'
+		 );
+		} else {
+		 return array(
+			 'result'   => 'fail',
+			 'redirect' => ''
+		 );
+		}
+	 	return null;
+    }
 
 	/**
 	 * Process the payment and return the result.
@@ -431,77 +585,10 @@ class WC_Cielo_Gateway extends WC_Payment_Gateway {
 	 * @return array           Redirect.
 	 */
 	public function process_payment( $order_id ) {
-		$order        = new WC_Order( $order_id );
-		$card         = isset( $_POST['cielo_card'] ) ? sanitize_text_field( $_POST['cielo_card'] ) : '';
-		$installments = isset( $_POST['cielo_installments'] ) ? absint( $_POST['cielo_installments'] ) : '';
-		$valid        = true;
-		$payment_url  = '';
-
-		// Validate the card brand.
-		if ( ! in_array( $card, $this->methods ) ) {
-			$this->add_error( __( 'please select a card.', 'cielo-woocommerce' ) );
-			$valid = false;
-		}
-
-		// Validate the installments field.
-		if ( '' === $installments ) {
-			$this->add_error( __( 'please select a number of installments.', 'cielo-woocommerce' ) );
-			$valid = false;
-		}
-
-		// Validate if debit is available.
-		if ( ! in_array( $card, WC_Cielo_API::get_debit_methods( $this->debit_methods ) ) && 0 === $installments ) {
-			$this->add_error( sprintf( __( '%s does not accept payment by debit.', 'cielo-woocommerce' ), WC_Cielo_API::get_payment_method_name( $card ) ) );
-			$valid = false;
-		}
-
-		if ( 0 != $installments ) {
-			// Validate the installments amount.
-			$installment_total = $order->order_total / $installments;
-			if ( 'client' == $this->installment_type && $installments >= $this->interest ) {
-				$interest_total    = $installment_total * ( ( 100 + WC_Cielo_API::get_valid_value( $this->interest_rate ) ) / 100 );
-				$installment_total = ( $installment_total < $interest_total ) ? $interest_total : $installment_total;
-			}
-			$smallest_value = ( 5 <= $this->smallest_installment ) ? $this->smallest_installment : 5;
-			if ( $installments > $this->installments || 1 != $installments && $installment_total < $smallest_value ) {
-				$this->add_error( __( 'invalid number of installments!', 'cielo-woocommerce' ) );
-				$valid = false;
-			}
-		}
-
-		if ( $valid ) {
-			$response = $this->api->do_transaction( $order, $order->id . '-' . time(), $card, $installments );
-
-			// Set the error alert.
-			if ( isset( $response->mensagem ) && ! empty( $response->mensagem ) ) {
-				$this->add_error( (string) $response->mensagem );
-				$valid = false;
-			}
-
-			// Save the tid.
-			if ( isset( $response->tid ) && ! empty( $response->tid ) ) {
-				update_post_meta( $order->id, '_wc_cielo_transaction_tid', (string) $response->tid );
-
-				// For WooCommerce 2.2 or later.
-				update_post_meta( $order->id, '_transaction_id', (string) $response->tid );
-			}
-
-			// Set the transaction URL.
-			if ( isset( $response->{'url-autenticacao'} ) && ! empty( $response->{'url-autenticacao'} ) ) {
-				$payment_url = (string) $response->{'url-autenticacao'};
-			}
-		}
-
-		if ( $valid ) {
-			return array(
-				'result'   => 'success',
-				'redirect' => $payment_url
-			);
+		if ($this->integration === 'buypage') {
+			return $this->process_payment_buypage($order_id);
 		} else {
-			return array(
-				'result'   => 'fail',
-				'redirect' => ''
-			);
+		 	return $this->process_payment_integrated($order_id);
 		}
 	}
 
@@ -535,6 +622,9 @@ class WC_Cielo_Gateway extends WC_Payment_Gateway {
 	 * @return void
 	 */
 	public function return_handler( $order ) {
+	 //TODO verificar metodo de inetegração e chamar função adequada
+	 //TODO pegar conteudo desta função e mover para função buypagehandler
+	 //TODO criar solucaoinetgradahandler
 		global $woocommerce;
 
 		$tid = get_post_meta( $order->id, '_wc_cielo_transaction_tid', true );
@@ -743,5 +833,67 @@ class WC_Cielo_Gateway extends WC_Payment_Gateway {
 	 */
 	public function currency_not_supported_message() {
 		echo '<div class="error"><p><strong>' . __( 'Cielo Disabled', 'cielo-woocommerce' ) . '</strong>: ' . sprintf( __( 'The currency <code>%s</code> is not supported. Works only with Brazilian Real.', 'cielo-woocommerce' ), get_woocommerce_currency() ) . '</p></div>';
+	}
+
+	public function redirect_page(){
+		if (isset($_SESSION['integrated_order'])) {
+			$data = $_SESSION['integrated_order'];
+			unset($_SESSION['integrated_order']);
+
+			$path = plugin_dir_path(__FILE__) . 'views/html-payment-redirect-form.php';
+			header("HTTP/1.1 200 OK");
+			if (file_exists($path)) {
+				include_once($path);
+			}
+		} else {
+			header(ABSPATH);
+		}
+	}
+
+	public function notification_page(){
+		if (isset($_POST) && count($_POST)>0) {
+			$order_id = $_POST['Order_Number'];
+
+			$order = new WC_Order($order_id);
+
+			// Save the tid.
+			update_post_meta($order->id, '_wc_cielo_transaction_tid', $_POST['checkout_cielo_order_number']);
+
+			// For WooCommerce 2.2 or later.
+			update_post_meta($order->id, '_transaction_id', $_POST['checkout_cielo_order_number']);
+
+			if ((($_POST['Payment_status'] === 2) || ($_POST['Payment_status'] === 7)) &&
+				(!in_array($order->get_status(), array('processing')))
+			) {
+				$order->update_status('processing');
+			}
+
+			if ($_POST['Payment_status'] === 5) {
+				$order->update_status('cancelled');
+			}
+			return "<status>OK</status>";
+		}
+		return "<status>BAD</status>";
+	}
+
+	public function change_status_page(){
+		if (isset($_POST) && count($_POST)>0) {
+			$order_id = $_POST['Order_Number'];
+
+			$order = new WC_Order( $order_id );
+
+			if ((($_POST['Payment_status'] === 2) || ($_POST['Payment_status'] === 7)) &&
+			(!in_array($order->get_status(), array('processing'))))
+			{
+				$order->update_status('processing');
+			}
+
+			if ($_POST['Payment_status'] === 5)
+			{
+				$order->update_status('cancelled');
+			}
+			return "<status>OK</status>";
+		}
+		return "<status>BAD</status>";
 	}
 }

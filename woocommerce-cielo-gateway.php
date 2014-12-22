@@ -54,12 +54,42 @@ class WC_Cielo {
 			// Add the gateway.
 			add_filter( 'woocommerce_payment_gateways', array( $this, 'add_gateway' ) );
 
+			add_action('template_redirect', __CLASS__.'::create_hooked_pages');
+
 			// Admin actions.
 			if ( is_admin() ) {
 				add_action( 'woocommerce_process_shop_order_meta', array( $this, 'cancel_payment' ), 999 );
 			}
 		} else {
 			add_action( 'admin_notices', array( $this, 'woocommerce_missing_notice' ) );
+		}
+	}
+
+	/**
+	 *
+	 */
+	public function create_hooked_pages () {
+		session_start();
+		global $wp_query;
+		if ($wp_query->query['pagename'] === 'redirect_page') {
+			$wp_query->is_404 = false;
+			$gateway = new WC_Cielo_Gateway();
+			$gateway->redirect_page();
+			exit();
+		}
+		if ($wp_query->query['pagename'] === 'notification_page') {
+			$wp_query->is_404 = false;
+			header("HTTP/1.1 200 OK");
+			$gateway = new WC_Cielo_Gateway();
+			$gateway->notification_page();
+			exit();
+		}
+		if ($wp_query->query['pagename'] === 'change_status_page') {
+			$wp_query->is_404 = false;
+			header("HTTP/1.1 200 OK");
+			$gateway = new WC_Cielo_Gateway();
+			$gateway->change_status_page();
+			exit();
 		}
 	}
 

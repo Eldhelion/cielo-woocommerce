@@ -351,7 +351,7 @@ class WC_Cielo_API {
 	 *
 	 * @return SimpleXmlElement|StdClass Transaction data.
 	 */
-	public function do_transaction( $order, $id, $card_brand, $installments ) {
+	public function do_buypage_transaction( $order, $id, $card_brand, $installments ) {
 		$account_data    = $this->get_account_data();
 		$payment_product = '1';
 		$order_total     = $order->order_total;
@@ -429,6 +429,77 @@ class WC_Cielo_API {
 		}
 
 		return $body;
+	}
+
+  /**
+   * Do transaction.
+   *
+   * @param  WC_Order $order          Order data.
+   *
+   * @return array
+   */
+    public function do_integrated_transaction($order) {
+		$data = array (
+		 	'Merchant_ID'=>	$this->gateway->number?$this->gateway->number:$this->test_cielo_number,
+		 	'Order_Numer' =>$order->id,
+			'Soft_Descriptor'=>'',
+			'Antifraud_Enabled'=>1
+		);
+
+	 	/** @var WP_User $user */
+	 	if ($user = $order->get_user()) {
+		 	$user_info = get_userdata($user->ID);
+
+			$data = array_merge($data, array(
+				'Customer_Name'=>$user_info->display_name,
+				'Customer_Identity'=> '',
+				'Customer_Email'=>$user_info->user_email
+			));
+		}
+
+	 	$itens = $order->get_items();
+	 	$n = 1;
+	 	$digital = true;
+	 	foreach($itens as $item) {
+		 /** @var WC_Product $product */
+			$product = $order->get_product_from_item($item);
+			$data['Cart_'.$n.'_Name'] = $product->get_formatted_name();
+			$data['Cart_'.$n.'_Description'] = $product->post->post_excerpt;
+			$data['Cart_'.$n.'_UnitPrice'] = number_format($product->get_price(),2,'','');
+			$data['Cart_'.$n.'_Quantity'] = $item['qty'];
+			$data['Cart_'.$n.'_Type'] = $product->is_virtual()?1:2;
+			$data['Cart_'.$n.'_Code'] = $product->get_sku();
+			$data['Cart_'.$n.'_Weight'] = $product->get_weight()*1000;
+			$data['Cart_'.$n.'_ZipCode'] = '';
+
+		 	$digital = $digital & $product->is_virtual();
+
+			$n++;
+		}
+
+		//TODO obter id do metodo de envio para determinar o valor: correios > 1, flat-rate > 2, free_shipping > 3, local_pickup > 4, digital > 5
+		if (!$digital) {
+			$shipping_method = $order->get_items('shipping');
+
+			if ($shipping_method['method_id'] == 'flat_rate') {
+				$data['Shipping_type'] = 2;
+		    } else if ($shipping_method['method_id'] == 'flat_rate') {
+				$data['Shipping_type'] = 3;
+			} else {
+				$data['Shipping_type'] = 1;
+			}
+			 $data['Shipping_Zipcode'] = $order->shipping_postcode;
+			 $data['Shipping_Address_Name'] = $order->shipping_address_1;
+			 $data['Shipping_Address_Number'] = '';
+			 $data['Shipping_Address_Complement'] = $order->shipping_address_2;
+			 $data['Shipping_Address_District'] = '';
+			 $data['Shipping_Address_City'] = $order->shipping_city;
+			 $data['Shipping_Address_State'] = $order->shipping_state;
+		} else {
+			$data['Shipping_type'] = 5;
+		}
+
+		return $data;
 	}
 
 	/**

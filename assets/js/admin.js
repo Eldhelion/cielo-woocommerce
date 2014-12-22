@@ -2,6 +2,39 @@
 	'use strict';
 
 	$( function () {
+		/**
+		 * Switch the options based on environment.
+		 *
+		 * @param {string} type
+		 */
+		function switchIntegration( type ) {
+			var fields = $( '#mainform .form-table:eq(0) tr:eq(7)' +
+				',#mainform .form-table:eq(0) tr:eq(8)' +
+				',#mainform .form-table:eq(0) tr:eq(9)' +
+				',#mainform .form-table:eq(0) tr:eq(10)' +
+				',#mainform .form-table:eq(0) tr:eq(11)' +
+				',#mainform .form-table:eq(0) tr:eq(12)' +
+				',#mainform .form-table:eq(0) tr:eq(13)' +
+				',#mainform .form-table:eq(0) tr:eq(14)' +
+				',#mainform .form-table:eq(0) tr:eq(15)' +
+				',#mainform .form-table:eq(1)' +
+				',#mainform .form-table:eq(2)' +
+				',h4'
+			);
+
+			if ( 'buypage' === type ) {
+				fields.show();
+			} else {
+				fields.hide();
+			}
+		}
+
+		switchIntegration( $( '#woocommerce_cielo_integration' ).val() );
+
+		$( '#woocommerce_cielo_integration' ).on( 'change', function () {
+			switchIntegration( $( this ).val() );
+		});
+
 
 		/**
 		 * Switch the options based on environment.
@@ -9,7 +42,7 @@
 		 * @param {string} type
 		 */
 		function switchEnvironment( type ) {
-			var fields = $( '#mainform .form-table:eq(0) tr:eq(4), #mainform .form-table:eq(0) tr:eq(5)' );
+			var fields = $( '#mainform .form-table:eq(0) tr:eq(5), #mainform .form-table:eq(0) tr:eq(6)' );
 
 			if ( 'test' === type ) {
 				fields.hide();
@@ -30,7 +63,7 @@
 		 * @param {array} methods
 		 */
 		function switchMethods( methods ) {
-			var fields = $( '#mainform .form-table:eq(0) tr:eq(7), #mainform .form-table:eq(0) tr:eq(8)' );
+			var fields = $( '#mainform .form-table:eq(0) tr:eq(8), #mainform .form-table:eq(0) tr:eq(9)' );
 
 			if ( -1 < $.inArray( 'visa', methods ) || -1 < $.inArray( 'mastercard', methods ) ) {
 				fields.show();
@@ -51,7 +84,7 @@
 		 * @param {array} debit_methods
 		 */
 		function switchDebitMethods( debit_methods ) {
-			var fields  = $( '#mainform .form-table:eq(0) tr:eq(11)' ),
+			var fields  = $( '#mainform .form-table:eq(0) tr:eq(12)' ),
 				methods = $( '#woocommerce_cielo_methods' ).val();
 
 			if ( 'none' !== debit_methods && ( -1 < $.inArray( 'visa', methods ) || -1 < $.inArray( 'mastercard', methods ) ) ) {
